@@ -1,0 +1,9 @@
+{
+  "name": "dewesoft-skills-plugin",
+  "version": "1.0.0",
+  "description": "Skill operative Dewesoft Italia: CRM/ERP Booster (opportunita e quote), API ERP, business development, supporto tecnico prodotto e brand identity. Uso interno.",
+  "author": { "name": "Alberto Boffi", "email": "alberto.boffi@dewesoft.com" },
+  "repository": "https://github.com/albertoboffi-DEWESOFT/dewesoft_skills_plugin",
+  "license": "UNLICENSED",
+  "keywords": ["dewesoft", "erp", "crm", "quotes", "brand"]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "dewesoft-skills",
+  "description": "Marketplace interno Dewesoft Italia. Contiene il plugin dewesoft-skills-plugin.",
+  "owner": { "name": "Alberto Boffi", "email": "alberto.boffi@dewesoft.com" },
+  "plugins": [
+    {
+      "name": "dewesoft-skills-plugin",
+      "displayName": "Dewesoft Skills",
+      "description": "Skill operative Dewesoft Italia: CRM/ERP Booster, API ERP, business development, supporto tecnico e brand identity.",
+      "source": "./plugins/dewesoft-skills-plugin",
+      "version": "1.0.0",
+      "category": "productivity"
+    }
+  ]
+}
