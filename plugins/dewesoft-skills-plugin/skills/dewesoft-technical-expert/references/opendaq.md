@@ -65,6 +65,50 @@ repo separati con la PR [#1049](https://github.com/openDAQ/openDAQ/pull/1049)
 [openDAQ/opc-ua-companion-spec](https://github.com/openDAQ/opc-ua-companion-spec)
 (NodeSet2.xml, Types.bsd, NodeId.csv).
 
+### L'asse dei tempi è una **regola**, non una lista di istanti
+
+**[VERIFICATO 14/09/2026]** È il concetto che spiega la maggior parte delle
+domande su «perché i timestamp dei due dispositivi divergono se sono
+sincronizzati PTP».
+
+Un segnale openDAQ non porta un tempo per campione. Porta un **segnale di
+dominio** con una regola lineare:
+
+```
+tempo(n) = origin + n × delta
+```
+
+`origin` è un istante assoluto ISO8601 nel `DataDescriptor`, `delta` è un intero
+in tick e `tick_resolution` è il valore del tick (`Ratio`). Il timestamp non
+viene **letto** da un orologio al momento del campionamento: viene **calcolato**
+da un contatore di campioni.
+
+Tre conseguenze, tutte osservate su hardware:
+
+| Se… | Effetto | Si vede? |
+|---|---|---|
+| il `delta` dichiarato sbaglia di pochi ppm | errore **lineare** che cresce senza fine (30 ppm = 108 ms/ora; 262 ppm ≈ 1 s/ora) | no |
+| si perde un campione | il contatore non avanza per lui: **tutto ciò che segue slitta** di 1/fs | **no**, il flusso resta regolare |
+| l'`origin` è fissata prima che l'orologio sia corretto | **offset costante** per tutta la corsa | no |
+
+**Il PTP non interviene su nessuno dei tre.** PTP disciplina l'orologio che dice
+l'ora (il PHC dell'interfaccia e, con `phc2sys`, `CLOCK_REALTIME`), non il clock
+che scandisce il convertitore. Un dispositivo può avere gli orologi allineati a
+decine di nanosecondi e timestamp che divergono di secondi.
+
+**Regola per rispondere a un cliente**: la sincronizzazione PTP garantisce che i
+due dispositivi *diano la stessa ora se interrogati*, non che etichettino i
+campioni sulla stessa scala. Perché lo facciano serve che il **clock di
+campionamento** sia ricavato dalla base dei tempi sincronizzata. Gli strumenti
+Dewesoft sincronizzabili lo fanno; una scheda generica con un divisore fisso su
+quarzo proprio **non può**, e il suo ritmo va misurato contro il PTP e
+compensato. È la differenza sostanziale fra *sincronizzato* e *sintonizzato*.
+
+**Diagnosi**: confrontare l'ultimo timestamp ricevuto con l'orologio **della
+sorgente**, mai con quello del PC che sta guardando. Un offset costante nel tempo
+è una latenza o un `origin` storto; un offset che **cresce** è un errore di
+ritmo, cioè `delta` sbagliato o campioni persi.
+
 ### Cosa NON esiste in openDAQ
 
 **[VERIFICATO 02–03/09/2026]** Enumerazione completa di un'istanza openDAQ
@@ -125,10 +169,54 @@ due venv quando si fa troubleshooting.
 
 ### Lettura dati
 
+### Convivere con un altro client: `ClientType`
+
+**[VERIFICATO 13–14/09/2026, OBSIDIAN-R8w]** Il tipo di client si dichiara nella
+config di `add_device`, e il default è **Control**:
+
+```python
+conf = inst.create_default_add_device_config()
+# impostare ClientType a ViewOnly su tutti i rami della config
+dev = inst.add_device("daq.nd://<ip>", conf)
+```
+
+Un secondo client **Control** viene **rifiutato** se una sessione di controllo
+esclusivo è già aperta (*"Failed to create device from connection string"*),
+mentre un client **ViewOnly** convive: non tocca la configurazione e può leggere
+lo streaming mentre un altro processo configura. Da usare sempre per i
+visualizzatori.
+
+Attenzione all'effetto collaterale noto: alla disconnessione **dell'ultimo
+client di configurazione** il dispositivo può riportare proprietà ai valori di
+default (osservato `SampleRate` a 1000 Hz e canale a `Voltage`). Un client di
+sola lettura non lo provoca.
+
+### Lettura dati
+
 `daq.StreamReader(signal)` poi `reader.read(count, timeout_ms)`. Attenzione: se
 il device è in `OperationModeType.Idle` la lettura restituisce **0 campioni** e
 sembra un guasto. Verificare sempre `dev.operation_mode` prima di concludere che
 qualcosa non funziona.
+
+**Ricostruire l'asse dei tempi assoluto** — `read_with_domain` restituisce i tick
+del dominio, che vanno convertiti con i parametri del descrittore, **non**
+contando i campioni (un buco nel flusso sposterebbe l'asse in silenzio):
+
+```python
+dom  = signal.domain_signal
+dd   = dom.descriptor
+delta = int(dd.rule.parameters["delta"])
+passo = dd.tick_resolution.numerator / dd.tick_resolution.denominator
+fs    = 1.0 / (passo * delta)                  # fs DICHIARATA dal dispositivo
+t0    = datetime.fromisoformat(dd.origin.replace("Z", "+00:00")).timestamp()
+x, d  = reader.read_with_domain(reader.available_count)
+t     = np.asarray(d, float) * passo + t0
+```
+
+**Usare sempre `fs` dichiarata dal descrittore, mai il nominale**: un dispositivo
+onesto dichiara il ritmo che ha misurato. E rileggere il descrittore dopo ogni
+cambio di modalità dell'amplificatore, perché con esso cambia anche **l'unità**
+(in IEPE i canali Dewesoft dichiarano `mV`, non `V`).
 
 ---
 
@@ -205,6 +293,50 @@ I dieci nuovi rispetto al firmware 2026.2.x: `DSEthernet`, `DSSerial`, `DSTrdp`,
 
 Diversi FB sono **contenitori**: espongono `available_function_block_types`
 propri e si configurano istanziando FB annidati.
+
+### `DSExactFrequency` — frequenza calcolata a bordo, **con una banda di ricerca**
+
+**[VERIFICATO 14/09/2026, OBSIDIAN-R8w fw 2026.3.19.1]** È la via per far uscire
+dal dispositivo una frequenza già calcolata, senza PC e senza FFT lato client.
+Struttura a contenitore: `dev.add_function_block("DSExactFrequency")` crea
+*«Exact frequency math 1»*, poi serve l'istanza annidata
+`add_function_block("ExactFrequencyInstance")`. **Le proprietà stanno sul
+contenitore, l'istanza ha solo la porta `Input`.**
+
+| Proprietà | Valore osservato | Cosa fa |
+|---|---|---|
+| `FrequencyRange` | oggetto con `Enable`, `StartFrequency`, `StopFrequency` | **banda di ricerca** |
+| `BlockSize` | 0.1 (secondi) | 10 valori al secondo |
+| `TrackFirstHarmonic` | False | |
+| `AmplitudeThreshold` | oggetto | soglia di ampiezza |
+
+**LA COSA DA SAPERE, e da dire sempre a un cliente**: fuori dalla banda di
+ricerca il blocco **non segnala nulla** — non ha un equivalente del flag di
+validità — e pubblica un numero **sbagliato e stabile**. Misurato con
+`FrequencyRange` 400–600 Hz e un tono vero a 300, 600, 610, 700 e 1000 Hz:
+l'uscita dava sempre **431–442 Hz con dispersione 36–53 Hz**, numeri che non
+dipendono affatto dal segnale applicato. Dentro banda l'errore era **sotto
+0,01 Hz** su cinque frequenze. Il **bordo superiore non è utilizzabile**: già
+esattamente a 600 Hz sbagliava.
+
+Conseguenze pratiche:
+
+1. la banda va **letta e impostata** prima di fidarsi del valore, e allargarla
+   espone il blocco al rumore di fondo — sceglierla sopra il rumore, non «il più
+   larga possibile»;
+2. chi consuma il valore (PLC, SCADA) deve avere una **soglia di plausibilità**
+   propria: frequenza fuori da un intervallo atteso, o che salta oltre una soglia
+   fra due cicli, va trattata come non valida;
+3. i nodi `FrequencyRange/StartFrequency` e `/StopFrequency` sono **scrivibili
+   via OPC UA**, e il cambio si perde al riavvio se non si salva la
+   configurazione del dispositivo.
+
+Gli altri due FB della stessa famiglia: `DSFft` (contenitore *«FFT math 1»*,
+proprietà `AmplitudeFormat`, `Lines`, `OverlapInPercent`, `AmplitudeFunction`,
+`OutputOperation`, `Window`, `Averaging`, `OutputScalarsFullRange`; uscite
+`<canale>/AmplFFT` più gli scalari Rms/Peak/PeakToPeak) e `DSTrackingFilter`
+(`ExtractedOrder`, `FixedBandwidth`, `SidelobeFallOff`, `FrequencySource`,
+`FixedFrequencyValue`).
 
 ### `DSTrdp` — TRDP (IEC 61375) su UDP, **bidirezionale**
 
@@ -354,6 +486,39 @@ Coerentemente, il dispositivo **dichiara** la capability come
 valori istantanei, stati, soglie, allarmi a ~10 Hz. Non è un trasporto dati di
 misura. Per la forma d'onda servono native streaming o LT.
 
+### Tre trappole che bloccano un cliente PLC **[VERIFICATO 13–14/09/2026, OBSIDIAN-R8w e device openDAQ custom]**
+
+**1. `ValueRank = -2` — è quella che ferma TwinCAT.** I nodi valore sono
+dichiarati con `ValueRank -2` ("Any": scalare oppure array di rango qualsiasi).
+È legale, ma un PLC deve allocare un'immagine di processo di **dimensione
+fissa**, e "Any" non gli dice quanti byte servono: il client OPC UA di TwinCAT
+non lo digerisce. Cambiarlo alla sorgente vorrebbe dire patchare il modulo OPC UA
+di openDAQ e ricompilarlo per il target. La via praticabile è una **passerella**
+(vedi §7).
+
+**2. I nodi sotto `/FB/` non sono browsabili.** `get_children()` non enumera la
+cartella intermedia, quindi un percorso di browse **non risolve** e si conclude
+erroneamente che il valore non sia esposto. Vanno indirizzati **per NodeId
+esplicito**, che contiene il numero di serie del dispositivo:
+
+```
+ns=4;s=/Dewesoft_<serial>/FB/DSExactFrequency_1/FB/ExactFrequencyInstance_1/Sig/Frequency/Value
+```
+
+**3. I metodi vanno chiamati passando il NODO, non la stringa.** Con
+`call_method("4:Save", ...)` il server risponde **`BadNoMatch`**. Corretto:
+
+```python
+cfg = client.get_node("ns=4;s=/Dewesoft_<serial>/Configuration")
+for m in await cfg.get_methods():
+    if (await m.read_browse_name()).Name == "Save":
+        await cfg.call_method(m, "<nome-configurazione>")
+```
+
+Il nodo `Configuration` espone `Save`, `Load`, `New`, `Delete` e
+`GetCurrentConfiguration`: **senza `Save` ogni modifica scritta via OPC UA si
+perde al riavvio**.
+
 ### Sicurezza — attenzione **[VERIFICATO]**
 
 Endpoint di default: **`SecurityPolicy None`, `SecurityMode None`,
@@ -386,6 +551,36 @@ native. **Da aprire come segnalazione con l'R&D.**
 | server OPC UA | lettura + scrittura config | TCP 4840 | **verificato**, valori a ~10 Hz |
 | `DSEthernet` | solo RX | UDP / Ethernet raw | struttura verificata, **no TCP** |
 | `DSSerial` | solo RX | RS-232/485 | nessuna porta su 8xLVe |
+
+### Il pattern «passerella» quando il PLC non digerisce il server nativo
+
+**[VERIFICATO 14/09/2026]** Soluzione applicata in campo quando TwinCAT non
+riesce ad allocare l'immagine di processo per via del `ValueRank -2` (§6): un
+piccolo server OPC UA intermedio che **legge da client** i server dei
+dispositivi e **ripubblica gli stessi valori** come scalari dichiarati
+(`ValueRank -1`, `ArrayDimensions` vuoto), con nomi leggibili e su un unico
+endpoint. Non calcola e non converte niente.
+
+Cosa aggiungere perché sia utile al PLC, imparato sul campo:
+
+- un **`Heartbeat`** che avanza a ritmo noto: un server vivo con dati fermi è il
+  guasto più insidioso, e la sola presenza dell'endpoint non lo rivela;
+- per **ogni sorgente** un `Online` (booleano, vero se ha risposto entro una
+  scadenza dichiarata) e un `AgeSeconds`;
+- le bandiere di validità convertite in **Boolean veri**: i dispositivi le
+  pubblicano spesso come Float64 0.0/1.0, che un PLC non vuole leggere così.
+
+La passerella può anche ospitare **nodi scrivibili dal PLC** (`set_writable()`
+in `asyncua`), utili per far tornare indietro lo stato dell'automazione e
+mostrarlo all'operatore. Due avvertenze misurate: TwinCAT **non compila
+`SourceTimestamp`**, quindi per sapere da quanto il PLC non scrive si usa
+`ServerTimestamp`, che il server registra e conserva a ogni scrittura; e quel
+timbro va confrontato con un **altro timbro dello stesso server** (per esempio
+quello dell'`Heartbeat`, letto nella stessa risposta), mai con l'orologio del PC
+che guarda, che può stare su una scala diversa.
+
+Costo da dichiarare sempre: è un anello in più. Se il processo si ferma, il PLC
+non vede nulla anche con i dispositivi perfettamente funzionanti.
 
 ### Con DewesoftX su PC **[DOC]**
 
@@ -439,6 +634,14 @@ collegamento e segnalare a HQ.
 | `daq.opcua://` → `BadDecodingError` | limite noto (§6): usare un client OPC UA generico, o il native. |
 | Porta 4840 chiusa con capability annunciata | `StartupServers['OpenDAQOPCUA'] = False`, oppure abilitato ma non ancora riavviato. |
 | Discovery non trova il device via IPv4 | sui firmware ≤ 2026.2.5.0 le capability sono annunciate **solo su IPv6** ULA. Connettersi con la stringa IPv4 esplicita o aggiornare il firmware. |
+| Il client OPC UA del PLC non riesce a mappare i nodi | i valori sono dichiarati `ValueRank -2` ("Any") e TwinCAT non alloca l'immagine di processo. Passerella che ripubblica come scalari (§6, §7). |
+| Un nodo che «non esiste»: il browse non lo trova | i nodi sotto `/FB/` non sono enumerabili. Indirizzarli per NodeId esplicito (§6). |
+| `BadNoMatch` chiamando un metodo | il metodo è stato passato come stringa `"4:Nome"`. Va passato l'oggetto nodo (§6). |
+| Una modifica scritta via OPC UA sparisce al riavvio | manca la chiamata a `Configuration/Save` con il nome della configurazione attiva. |
+| Il secondo client openDAQ viene rifiutato | il primo ha preso il controllo. Aprire il secondo come `ClientType` **ViewOnly** (§3). |
+| Le impostazioni tornano ai default da sole | è successo alla disconnessione dell'ultimo client di **configurazione**. Usare client di sola lettura per visualizzare. |
+| Un FB creato dopo l'avvio non si vede in OPC UA | il server espone solo i FB presenti al **proprio** avvio, e ciclare `Srv/OpenDAQOPCUA/Active` non ricostruisce l'address space: prima la configurazione, poi il server. |
+| I timestamp dei due dispositivi divergono benché siano sincronizzati PTP | l'asse dei tempi è una **regola** `origin + n × delta` (§2). Offset costante → latenza o `origin`; offset che **cresce** → `delta` sbagliato o campioni persi. |
 
 Porte utili sull'IOLITE X: **22** (SSH, OpenSSH 10.3 con publickey/password —
 credenziali non pubbliche, chiederle a Dewesoft), **4840** (OPC UA, se
@@ -465,6 +668,13 @@ abilitato), **7420** (native config e streaming).
    support.dewesoft.com per conferma.
 5. **Lasciare il dispositivo come l'hai trovato**: rimuovere i FB istanziati per
    prova, ripristinare `StartupServers`, `SampleRate` e `OperationMode`.
+6. **Su qualsiasi domanda di sincronizzazione, separare tre cose** che i clienti
+   (e chi risponde) confondono di continuo: gli **orologi** allineati dal PTP;
+   il **clock di campionamento**, che il PTP non tocca a meno che il dispositivo
+   non lo derivi dalla base dei tempi; e i **timestamp**, che sono calcolati da
+   una regola e possono sbagliare per entrambi i motivi più la perdita di
+   campioni. Una risposta che dice solo «sono sincronizzati PTP» non è una
+   risposta.
 
 ## Fonti
 
@@ -493,3 +703,11 @@ S/N DB24032498 (firmware 2026.2.0.15 → 2026.2.5.0 → 2026.3.0.8), script e lo
 `client_opcua_rate.py`, `plot_ai1_opcua.py`, `max_rate.py`). Esempi openDAQ di
 riferimento in `~/Developer/DEWESOFT/opendaq-example-codes` (trattini, non
 underscore).
+
+Sessioni del **13–14/09/2026** sul banco della demo CNR-INM (OBSIDIAN-R8w
+S/N DB24049506 firmware 2026.3.19.1 + device openDAQ custom su BeagleBone Black):
+`DSExactFrequency` e la sua banda di ricerca, `ValueRank -2` verso TwinCAT e il
+pattern passerella, `ClientType` ViewOnly, regola del dominio e diagnosi delle
+derive di timestamp. Repo `~/Developer/DEWESOFT/opendaq-bbb-bookworm`
+(`opendaq-device/banda_obsidian.py`, `dstrack/plc/gateway_opcua.py`,
+`dstrack/sources/opendaq_raw.py`, `dstrack/transport/plc_stato.py`).
