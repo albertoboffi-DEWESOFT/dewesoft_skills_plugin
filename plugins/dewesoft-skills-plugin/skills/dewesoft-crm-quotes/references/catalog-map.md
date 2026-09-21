@@ -100,3 +100,37 @@ Quando l'utente nomina un prodotto con un nome "parlato" (SiriusX, Sirius XHS,
 Krypton...), **non assumere il codice**: naviga il ramo del Configurator, leggi
 i codici a schermo e proponi la scelta con prezzi e disponibilità. Se il nome è
 ambiguo tra due famiglie, chiedi.
+
+## OBSIDIAN e IOLITE rack (END_ITA 2025, letti 2026-09-21)
+
+Le **slice IOLITE rack non sono articoli autonomi**: nel Configurator esistono
+solo come configurazione dentro un chassis. `IOLITE > IOLITE rack` contiene solo
+i chassis (`IOLITE R12`, `IOLITE R8`, `IOLITE R8r`); le slice compaiono nella
+sidebar sotto il chassis OBSIDIAN selezionato, con il badge di stock, e un click
+le **aggiunge alla configurazione** (non naviga alla scheda prodotto).
+
+| Codice | Prezzo | Stock | Note |
+|---|---|---|---|
+| `OBSIDIAN-R12` | 6.200,00 EUR | 0 | chassis 19" fino a 12 slice IOLITE, ECAT ridondante, tariff code 90303900. Scope of supply: `PS-120W-L1B2f` + `RJ45-3m`. Software incluso: DEWESOFT-X-PROF, OPT-CAN, OPT-CAN-FD |
+| `OBSIDIAN-R12-GPS-1kHz` | 5.981,79 EUR | 0 | |
+| `OBSIDIAN-R12-GPS-10kHz` | 6.816,67 EUR | 0 | |
+| `IOLITEr-16xAO` | 2.197,00 EUR | 0 | 16 ch analog output |
+| `IOLITEr-16xLV` | 2.197,00 EUR | 0 | 16 ch low voltage |
+| `IOLITEr-32xDO` | 900,00 EUR | 0 | 32 ch digital output |
+| `IOLITEr-8xLVe` | 3.073,00 EUR | 26 | 8 ch low voltage, connettore **DSUB9 femmina** |
+| `IOLITEr-8xUNI-D37` | 6.017,86 EUR | 0 | 8 ch universale, connettore **D37** |
+| `DSIi-10A` (`RAD.3500257.000`) | 417,00 EUR | 0 | adattatore DSI isolato per misura di corrente; ingresso BAN, **uscita DSUB9**; fino a 10 A (0,5%), banda 100 kHz, CAT III 600 V, TEDS |
+
+**Trappole verificate:**
+
+- **`IOLITEr-8xUNI` non esiste** come slice OBSIDIAN: l'unica variante UNI rack
+  e' `IOLITEr-8xUNI-D37`.
+- Gli **adattatori DSI escono su DSUB9**: non si collegano a una slice `-D37`
+  senza un breakout D37 -> 8x DSUB9, che a catalogo non c'e'. Per una misura di
+  corrente con adattatori DSI su rack, la slice con il connettore giusto e'
+  `IOLITEr-8xLVe`.
+- Lo `OBSIDIAN-R12` avverte che in **standalone** un rack pieno non riesce a
+  salvare tutti i canali a 20 kHz: ridurre sample rate o canali storati.
+- La lista completa delle slice compatibili con OBSIDIAN-R12 (32 codici, dalle
+  `IOLITEhir-4x*` a `IOLITEr-JUMPER`) e' leggibile a schermo nella sidebar del
+  chassis, con lo stock accanto a ogni codice.

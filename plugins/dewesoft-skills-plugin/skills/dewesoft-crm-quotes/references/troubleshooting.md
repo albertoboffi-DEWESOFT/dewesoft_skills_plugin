@@ -15,12 +15,59 @@ ancora il precedente).
 2. Ritentare funziona: al secondo tentativo il salvataggio è andato a buon fine.
 3. Per il secondo tentativo, prendi il riferimento del pulsante con `find`
    ("Save button") e clicca per `ref` invece che per coordinate: le coordinate
-   possono cadere fuori dal bottone se la pagina ha scrollato.
+   possono cadere fuori dal bottone se la pagina ha scrollato. **Attenzione:**
+   questo vale solo per un pulsante gia' visibile a schermo - per gli elementi
+   sotto la piega vale la regola opposta, vedi "Pulsanti dell'ERP che sembrano
+   morti".
 4. Se vuoi diagnosticare, attiva prima `read_network_requests` (il tracking
    parte dalla prima chiamata al tool, quindi va attivato **prima** dell'azione)
    e filtra su `erpapi`. L'app manda anche envelope a Sentry: la presenza di un
    POST a `ingest.sentry.io` subito dopo il click è indizio di errore JS lato
    client.
+
+## Il Configurator perde l'aggancio alla quote a ogni reload
+
+**Sintomo:** il pulsante in fondo al carrello legge `CHECKOUT` (scolorito)
+invece di `SAVE ITEM(S) TO QUOTE`, e cliccarlo non fa nulla: nessun dialog,
+nessun errore a schermo, **nessuna chiamata di rete**. In console solo warning
+Sentry, nessuna eccezione.
+
+**Causa (verificata 2026-09-21):** il Configurator carica la quote con
+`GET https://api.dewesoft.com/api/quotes/{id}?...&type=Quote&tenant=erp`.
+Quando quella chiamata torna **HTTP 500** l'aggancio e' rotto e all'apertura
+compare il popup `This action is unauthorized - getQuote`. Il 500 si presenta
+dopo qualsiasi **ricaricamento di pagina** nel tab del Configurator (`navigate`
+su un URL diretto, F5): lo stato della sessione quote vive solo nella SPA.
+
+**Cosa fare:**
+
+1. Chiudere il tab del Configurator e riaprirlo da `+ Add from Configurator`
+   sul dettaglio della quote.
+2. Da li' in poi **navigare solo dentro la SPA**, cliccando i link della
+   sidebar (`OBSIDIAN` -> `OBSIDIAN-R12`). Mai `navigate` su un URL del
+   Configurator.
+3. Per azzerare la configurazione di un sistema e costruirne un altro, usare
+   l'**icona cerchio-barrato** in alto a sinistra del pannello prodotto, non il
+   reload.
+4. Prima di salvare, **verificare che il pulsante legga `SAVE ITEM(S) TO
+   QUOTE`**: se legge `CHECKOUT`, l'aggancio e' perso e il salvataggio
+   fallirebbe in silenzio.
+
+Diagnosi rapida: `read_network_requests` sul tab del Configurator, filtro
+`quotes` - un 500 su `/api/quotes/{id}` conferma il problema.
+
+## Pulsanti dell'ERP che sembrano morti
+
+**Sintomo:** `+ Quick Add` e `+ Add from Configurator` non aprono nulla:
+nessun dialog, nessun nuovo tab, nessuna chiamata verso `erpapi`.
+
+**Causa:** il click e' stato fatto **per `ref`** su un elemento fuori dalla
+porzione visibile della pagina. Nemmeno `scroll_to` seguito da click per `ref`
+e' sufficiente.
+
+**Cosa fare:** scrollare la pagina, fare uno `screenshot`, leggere le coordinate
+dallo screenshot e cliccare **per coordinate**. Poi attendere 8-10 secondi: i
+dialog dell'ERP sono lenti ad aprirsi.
 
 ## Il tab del Configurator si chiude da solo
 
