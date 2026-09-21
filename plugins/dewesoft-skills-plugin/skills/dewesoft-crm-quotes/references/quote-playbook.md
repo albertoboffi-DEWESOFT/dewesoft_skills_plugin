@@ -82,6 +82,24 @@ stimata, poi **`SAVE ITEM(S) TO QUOTE`**.
 Dopo il salvataggio il **tab del Configurator si chiude da solo**: rileggi
 `tabs_context_mcp`, poi ricarica `/orders-quote/{id}` per vedere le righe.
 
+**Regole non negoziabili del Configurator agganciato** (verificate 2026-09-21):
+
+- **Mai ricaricare la pagina** nel tab del Configurator: l'aggancio alla quote
+  si rompe, il pulsante torna `CHECKOUT` e il salvataggio fallisce in silenzio.
+  Naviga solo cliccando i link della sidebar. Dettagli in `troubleshooting.md`.
+- Per costruire piu' sistemi in un colpo solo: configura il primo -> icona
+  **carrello** del pannello prodotto (aggiunge il sistema configurato al
+  carrello) -> icona **cerchio-barrato** per azzerare la configurazione ->
+  configura il secondo, e cosi' via. Il totale del carrello in alto a destra
+  conferma ogni aggiunta.
+- I **prezzi delle slice** non sono esposti singolarmente: si leggono come
+  **delta del `Total price`** del chassis prima e dopo l'aggiunta della slice.
+- Riaprendo il Configurator da una quote che ha gia' delle righe, il carrello si
+  **sincronizza** con quelle righe e le mostra come item. `SAVE ITEM(S) TO
+  QUOTE` aggiunge solo i sistemi nuovi: **non duplica** le righe esistenti
+  (verificato su Q-00192-2026: 5 righe preesistenti + 3 sistemi -> 8 righe).
+- Prima di cliccare, verifica che il pulsante legga `SAVE ITEM(S) TO QUOTE`.
+
 **c) `+ Add local products`** — articoli locali non a catalogo HQ.
 
 ## Totali
@@ -113,6 +131,43 @@ Barra di stato della quote: `NEW` → `SENT TO CUSTOMER` → `ORDER CREATED`.
 Stati visti in lista: NEW, SENT TO CUSTOMER, ORDER CREATED, CLOSED.
 Header del dettaglio: `Cancel`, `History`, e un badge di warning
 `Missing fields on account` quando l'anagrafica cliente è incompleta.
+
+## Voci di servizio: training
+
+Le **giornate di training non esistono a catalogo**. Non si trovano in Quick Add
+(che esclude i servizi) e nel Configurator `DEMO, Training and EXPO > Training
+sets` ci sono solo kit hardware (`PRO-TRAINING-KIT-STARTER`, `-STG`, `-MODAL`,
+`PRO-TRAINING-SIRIUS-UNI-AO`); `Custom item`, `Custom upgrades` e
+`CRM custom items` contengono solo contenitori generici.
+
+**Convenzione Italia** (verificata su Q-00014-2026/2 AVIO e Q-00192-2026 ALTEN):
+
+| Campo | Valore |
+|---|---|
+| Inserimento | Quick Add -> spuntare `CUSTOM ITEM FROM HQ` |
+| CUSTOM ITEM | `Training on-site` (esattamente cosi') |
+| QUANTITY | numero di giornate |
+| PRICE | **1.400,00 EUR / giornata** (si edita sulla sotto-riga N.1) |
+| TRS. PRICE | 0,00 |
+| HQ RESP. PERSON | `Alberto Boffi (DWS ITA)` |
+| Descrizione | "Training specializzato presso vostra sede" |
+
+Lo **sconto commerciale va in colonna `DISCOUNT` sulla riga padre**, in
+percentuale, non abbassando il prezzo unitario: cosi' nel PDF di offerta compare
+la colonna SCONTO e il cliente vede prezzo pieno e sconto separati.
+Esempio: 2 giornate x 1.400,00 - 30% = **1.960,00 EUR**.
+
+## Raggruppare le righe in cartelle
+
+Il Product list supporta **cartelle** (icona a cartella accanto al nome, riga in
+grassetto maiuscolo, es. `OPZIONE A - 8XLVE CON ADATTATORI 10A`) per presentare
+al cliente configurazioni alternative. Le righe cartella hanno la matita di
+rinomina ma **non il toggle** di attivazione delle righe normali. Nel PDF la
+cartella diventa una riga arancione di intestazione, con numerazione gerarchica
+(1, 1.1, 1.2, 1.2.1 ...).
+
+Osservato su Q-00192-2026. La **creazione** delle cartelle non e' ancora stata
+eseguita dalla skill: va verificata al prossimo uso.
 
 ## Modifica di una quote esistente
 

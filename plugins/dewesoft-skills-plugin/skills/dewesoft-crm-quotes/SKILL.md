@@ -3,10 +3,10 @@ name: dewesoft-crm-quotes
 description: Crea e modifica opportunità e quote (offerte) nel CRM/ERP Dewesoft Booster (it-erp.dewesoft.com) pilotando il browser dell'utente, e legge/cerca record esistenti. Attivala quando l'utente vuole aprire, aggiornare, far avanzare o chiudere un'opportunità, creare o modificare una quote e le sue righe prodotto, aggiungere articoli dal Configurator, applicare sconti, rigenerare il PDF dell'offerta, o cercare account, contatti, opportunità e quote nell'ERP. Frasi tipiche - "apri un'opportunità", "crea un'offerta per", "aggiungi una riga alla quote", "quota un SIRIUS/KRYPTON/IOLITE per il cliente X", "porta l'opp a proposal sent", "quanto costa quotare", "Q-00xxx", "OP-00xxx", "Booster ERP", "CRM Dewesoft". NON usarla per domande solo tecniche sui prodotti (usa dewesoft-technical-expert) né per generare documenti .docx/.pptx (usa dewesoft-brand-identity).
 license: Proprietario Dewesoft Italia - uso interno
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   owner: alberto.boffi@dewesoft.com
   verified-instance: it (it-erp.dewesoft.com)
-  last-field-verification: 2026-08-24
+  last-field-verification: 2026-09-21
 ---
 
 # Dewesoft CRM — Opportunità e Quote
