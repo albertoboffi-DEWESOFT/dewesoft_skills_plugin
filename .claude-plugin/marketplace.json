@@ -9,7 +9,7 @@
       "displayName": "Dewesoft Skills",
       "description": "Skill operative Dewesoft Italia: CRM/ERP Booster, API ERP, business development, supporto tecnico e brand identity.",
       "source": "./plugins/dewesoft-skills-plugin",
-      "version": "1.0.0",
+      "version": "1.2.0",
       "category": "productivity"
     }
   ]

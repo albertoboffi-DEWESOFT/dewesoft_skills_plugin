@@ -47,6 +47,13 @@ Sezione **Terms & Conditions**: `PAYMENT TERMS` *obbligatorio* (default IT visto
 time), `WARRANTY`, `TERMS AND CONDITIONS OF SALE`, `NOTE` (editor rich text con
 immagini, video, heading H1-H5, liste, tabelle e un pulsante `TEMPLATES`).
 
+**`WARRANTY` e `LEAD TIMES` non si improvvisano**: i default dipendono da cosa
+c'è dentro la quote (solo terze parti vs almeno un prodotto Dewesoft). Regole
+in `references/commercial-defaults.md` — leggile prima di compilare.
+
+`QUOTE VALIDITY DATE` **non esiste nel form di creazione**: compare solo sul
+dettaglio dopo il primo salvataggio, precompilata a +30 giorni.
+
 Checkbox `After save, create another` accanto a Save: lasciala deselezionata
 salvo batch.
 
@@ -56,11 +63,18 @@ Sul dettaglio `/orders-quote/{id}`, sezione **Product list** con colonne
 `ID / PRODUCT / TRS. PRICE / QTY / PRICE / DISCOUNT / TOTAL`, un toggle per riga
 (attivo/disattivo) e una maniglia di riordino. Pulsanti `Columns` e `Actions`.
 
+Ogni riga padre `N` è espandibile con il chevron `>` e contiene la sotto-riga
+`N.1`: **i prezzi si editano sulla sotto-riga, non sulla riga padre.**
+
 Tre modi per aggiungere righe:
 
 **a) `+ Quick Add`** — dialog "Add Dewesoft item to quote". Combobox con ricerca
 su codice e descrizione, campo `QUANTITY`, checkbox `CUSTOM ITEM FROM HQ`,
-pulsante `+ Add to quote`.
+checkbox `After save, create another`, pulsante `+ Add to quote`.
+Spuntando `CUSTOM ITEM FROM HQ` si crea una **riga di terze parti** (nome
+libero, quantità, HQ resp. person) con prezzi e descrizioni da compilare dopo:
+procedura completa, convenzioni di prezzo e trappole in
+`references/custom-items.md`.
 Limite dichiarato dall'ERP: **Quick Add accetta solo articoli semplici.** Non si
 possono aggiungere con Quick Add:
 1. tutti i sistemi rack
@@ -114,9 +128,20 @@ Stati visti in lista: NEW, SENT TO CUSTOMER, ORDER CREATED, CLOSED.
 Header del dettaglio: `Cancel`, `History`, e un badge di warning
 `Missing fields on account` quando l'anagrafica cliente è incompleta.
 
+## Revisione di una quote già inviata
+
+Non creare una quote nuova: usa **`Create new version`** dalla sezione Quotes
+dell'opportunità. Crea `Q-000NN-AAAA/N+1`, annulla da sola la versione
+precedente e lascia il `VALUE` dell'opportunità allineato alla sola versione
+attiva. Dettagli, automatismi di stage, eliminazione righe e modifica quantità:
+`references/versioni-quote.md`.
+
 ## Modifica di una quote esistente
 
-- Quantità, prezzo e sconto si editano in linea nel Product list.
+- La **quantità** si edita in linea sulla **riga padre**; **TRS. PRICE** e
+  **PRICE** solo sulla **sotto-riga `N.1`**.
+- Per **eliminare** una riga: checkbox della riga → barra contestuale in basso →
+  cestino → Confirm. Il menu `Actions` in alto è globale e non ha il delete.
 - Il toggle di riga esclude una riga dal calcolo senza cancellarla.
 - Per righe di sistema, riapri il Configurator dalla quote (`Add from
   Configurator`) così resta agganciato allo stesso documento.
