@@ -166,6 +166,25 @@ due venv quando si fa troubleshooting.
   ogni `set_property_value` in try/except e **rileggere** il valore.
 - Chiudere sempre con `inst.remove_device(dev)` e distruggere l'istanza: le
   sessioni di controllo appese saturano gli slot del dispositivo.
+- `prop.min_value` / `prop.max_value` restituiscono un `INumber`: va letto
+  `.float_value`, non confrontato direttamente con un float Python.
+- Gli handler di evento vanno incapsulati: `ev.add_handler(daq.EventHandler(fn))`;
+  una funzione nuda viene rifiutata. **Un handler che solleva un'eccezione gira sul
+  thread del protocollo**: nel caso peggiore si porta dietro la connessione (§5).
+  Avvolgere sempre il corpo in try/except e non toccare `args.parameters` senza
+  guardia, perché su alcuni eventi l'accesso fallisce.
+- **I segnali dei canali non sono tutti attivi.** Su IOLITE X solo il primo
+  risultava `active = True`: un reader o un recorder collegato a un segnale
+  inattivo non riceve pacchetti e il file resta vuoto, senza errori. Impostare
+  `signal.active = True` prima di leggere.
+- Per caricare un modulo proprio: `builder.add_module_path(dir)` **si somma** al
+  path del package (visibile in `builder.module_paths_list`), non lo sostituisce;
+  non serve ri-aggiungere `opendaq.OPENDAQ_MODULES_DIR`. Un function block di un
+  modulo locale va aggiunto **all'istanza**, non al dispositivo remoto.
+- Una GUI Python su macOS: il Tcl/Tk 8.5 di sistema (quello del Python di Apple e
+  dei venv creati da lui) apre la finestra e **non disegna i widget** sulle
+  versioni recenti di macOS. Serve un interprete con Tk >= 8.6, per esempio
+  `brew install python-tk@3.14`. Controllare `tkinter.TkVersion` all'avvio.
 
 ### Lettura dati
 
@@ -185,6 +204,11 @@ esclusivo è già aperta (*"Failed to create device from connection string"*),
 mentre un client **ViewOnly** convive: non tocca la configurazione e può leggere
 lo streaming mentre un altro processo configura. Da usare sempre per i
 visualizzatori.
+
+**[VERIFICATO 03/11/2026, IOLITE-X DB24032498]** In assenza di una sessione
+esclusiva, **due client `Control` convivono senza problemi**: entrambi leggono e
+scrivono, e la scrittura dell'uno è subito visibile all'altro. Il limite scatta
+solo contro l'`ExclusiveControl`.
 
 **[VERIFICATO 03/11/2026, IOLITE-X DB24032498]** **DewesoftX si collega come
 `ExclusiveControl`**, non come `Control`. Letto in `activeClientConnections` mentre
