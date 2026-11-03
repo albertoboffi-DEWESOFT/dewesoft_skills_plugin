@@ -186,6 +186,22 @@ mentre un client **ViewOnly** convive: non tocca la configurazione e può legger
 lo streaming mentre un altro processo configura. Da usare sempre per i
 visualizzatori.
 
+**[VERIFICATO 03/11/2026, IOLITE-X DB24032498]** **DewesoftX si collega come
+`ExclusiveControl`**, non come `Control`. Letto in `activeClientConnections` mentre
+DewesoftX era collegato:
+
+```
+DEWE_<host>                 Configuration   clientType='ExclusiveControl'
+DEWE_<host>                 Streaming
+<altro-pc>                  Configuration   clientType='ViewOnly'      <- convive
+```
+
+Conseguenza operativa: **nessun client openDAQ in `Control` può lavorare mentre
+DewesoftX è collegato**, e un client `ViewOnly` convive ma in scrittura riceve
+`Operation is not avilable under view-only connection` (il refuso è del
+dispositivo). Qualunque strumento che debba **scrivere** proprietà va quindi
+eseguito a DewesoftX scollegato, oppure **a bordo del dispositivo**.
+
 Attenzione all'effetto collaterale noto: alla disconnessione **dell'ultimo
 client di configurazione** il dispositivo può riportare proprietà ai valori di
 default (osservato `SampleRate` a 1000 Hz e canale a `Voltage`). Un client di
@@ -250,6 +266,32 @@ protocolli "openDAQ, OPC-UA" mentre la pagina prodotto cita solo openDAQ —
 `GetPossibleSampleRate(1000000)` → **200000**: il tetto è **200 kS/s**.
 Impostando `SampleRate = 200000` il native streaming su AI 1 misura
 **~203 000 Hz**. `AcqLoopRate` resta a 100 e **rifiuta ogni scrittura**.
+
+### Dove stanno i parametri di un canale **[VERIFICATO 03/11/2026, fw 2026.2.5.0]**
+
+Un canale analogico espone come proprietà diretta **solo** `SampleRate` e
+`ModuleName`. Tutto il condizionamento sta in **function block annidati dentro il
+canale**:
+
+```
+IO/<slice>/AI<n>/FB/Amplifier     ->  VoltageRange, CurrentRange, ExcitationSense,
+                                      ExcitationType, Excitation, RegularExcitation,
+                                      NoExcitation, WireSchematic, Pinout, ...
+IO/<slice>/AI<n>/FB/Sensor        ->  Model, SerialNumber, Unit, PhysicalQuantity
+```
+
+Su `MidRangeX-8xLVe_DSUB37` (modulo X-LVe): `Excitation` è un Float con unità V e
+range **0..24 V**, `ExcitationType = Unipolar` (unico valore ammesso),
+`HardwareCapabilities = "Unipolar excitation"`. **Leggere sempre `getMinValue()` /
+`getMaxValue()` della proprietà** invece di assumere un range: cambia col tipo di
+modulo.
+
+Il canale espone inoltre nel proprio status container `ExcPowerStatus`, enum
+`ExcPowerType {Ok, Overload, Open, Not Applicable}` — utile per capire se c'è
+davvero un carico sull'alimentazione sensore (`Open` = circuito aperto).
+
+La cartella `IO` contiene una **slice per modulo**, con `local_id` numerico
+(`"1"`) e `name` il tipo di modulo. Va castata a `IFolder` per enumerarne i canali.
 
 ### Server attivabili a bordo **[VERIFICATO]**
 
@@ -337,6 +379,40 @@ proprietà `AmplitudeFormat`, `Lines`, `OverlapInPercent`, `AmplitudeFunction`,
 `<canale>/AmplFFT` più gli scalari Rms/Peak/PeakToPeak) e `DSTrackingFilter`
 (`ExtractedOrder`, `FixedBandwidth`, `SidelobeFallOff`, `FrequencySource`,
 `FixedFrequencyValue`).
+
+### `DSStoring*` — lo storing a bordo, e cosa `active` **non** indica
+
+`DSStoringDxd`, `DSStoringCh10`, `DSStoringCSV` sono i function block con cui il
+dispositivo memorizza sul proprio disco (`StorageLocation`, default
+`/opt/dewesoft/software/data/`). Proprietà: `Mode[Continuous|Triggered]`,
+`Filename` con segnaposto (`{YYYY}{mm}{DD}-{HH}{MM}_{count 1}`), `FileSplitting`,
+`CyclicMultifiles`, più quelle specifiche del formato.
+
+**[VERIFICATO 03/11/2026]** Tre fatti da sapere prima di usarli come indicatore di
+stato:
+
+1. **Non implementano `IRecorder`**: il cast fallisce. Non hanno `startRecording` /
+   `stopRecording` né alcuna proprietà di sola lettura sullo stato. L'unico
+   interruttore è l'attributo standard `active`.
+2. **`active = True` non significa «sta registrando»**: significa «caricato e
+   abilitato». Misurato con DewesoftX che registrava e si fermava sullo stesso
+   dispositivo: `DSStoringDxd_1.active` è rimasto `True` in tutti e tre gli stati
+   (prima, durante, dopo).
+3. **Sopravvivono alla disconnessione di chi li ha creati**: chiusa la sessione
+   DewesoftX, `DSStoringDxd_1` è rimasto sul dispositivo, `active = True`, con
+   l'`Input1` ancora collegato al segnale del canale. Un orfano così continua a
+   occupare il disco del dispositivo finché non lo si disattiva o rimuove.
+
+**ATTENZIONE, incidente reale**: creando un `DSStoringCSV` via openDAQ mentre era
+registrato un event handler Python che andava in eccezione dentro la callback del
+protocollo (`failed while triggering core event ... Failed to handle event in
+PyEventHandlerImpl`), il **server openDAQ del dispositivo è caduto**: mDNS
+continuava a rispondere ma **tutte le porte rifiutavano la connessione** (7420,
+4840, 7414) e il dispositivo è tornato utilizzabile solo con un **power cycle**.
+Non è stato possibile isolare se la causa fosse la creazione del function block o
+l'handler difettoso. Regola prudenziale: **mai lasciare che un handler di core
+event possa sollevare un'eccezione**, e trattare la creazione di function block
+sul dispositivo come un'operazione che può richiedere un riavvio fisico.
 
 ### `DSTrdp` — TRDP (IEC 61375) su UDP, **bidirezionale**
 
@@ -639,6 +715,10 @@ collegamento e segnalare a HQ.
 | `BadNoMatch` chiamando un metodo | il metodo è stato passato come stringa `"4:Nome"`. Va passato l'oggetto nodo (§6). |
 | Una modifica scritta via OPC UA sparisce al riavvio | manca la chiamata a `Configuration/Save` con il nome della configurazione attiva. |
 | Il secondo client openDAQ viene rifiutato | il primo ha preso il controllo. Aprire il secondo come `ClientType` **ViewOnly** (§3). |
+| DewesoftX non si collega perché «c'è già qualcuno» | DewesoftX chiede `ExclusiveControl`: qualsiasi client openDAQ in `Control` lo blocca. Chiudere il client, oppure aprirlo in `ViewOnly` (ma allora non può scrivere). |
+| Un function block custom scrive e la connessione va in timeout | la scrittura avviene dentro un handler di core event, sul thread del protocollo (§10). Accodare allo scheduler o usare un thread proprio. |
+| Una sottoscrizione a core event non riceve niente | gli eventi non risalgono l'albero: sottoscriversi **sul componente** che li genera, non sul padre (§10). |
+| `BasicCsvRecorder` crea il file ma resta vuoto | osservato 03/11/2026 con un segnale di IOLITE X, anche attivando il segnale e avviando l'acquisizione prima del recorder, con finestre fino a 6 s. Comportamento del recorder di riferimento, da indagare a parte. |
 | Le impostazioni tornano ai default da sole | è successo alla disconnessione dell'ultimo client di **configurazione**. Usare client di sola lettura per visualizzare. |
 | Un FB creato dopo l'avvio non si vede in OPC UA | il server espone solo i FB presenti al **proprio** avvio, e ciclare `Srv/OpenDAQOPCUA/Active` non ricostruisce l'address space: prima la configurazione, poi il server. |
 | I timestamp dei due dispositivi divergono benché siano sincronizzati PTP | l'asse dei tempi è una **regola** `origin + n × delta` (§2). Offset costante → latenza o `origin`; offset che **cresce** → `delta` sbagliato o campioni persi. |
@@ -676,6 +756,153 @@ abilitato), **7420** (native config e streaming).
    campioni. Una risposta che dice solo «sono sincronizzati PTP» non è una
    risposta.
 
+## 10. Scrivere un function block openDAQ custom
+
+**[VERIFICATO 03/11/2026, IOLITE-X DB24032498 fw 2026.2.5.0, SDK a bordo
+3.20.1.34, client openDAQ 3.40.3, macOS 27.0.1 arm64]**
+
+Caso di studio: un function block che accende l'eccitazione di un canale al valore
+impostato **solo mentre il dispositivo registra**, e la riporta a 0 V appena si
+ferma.
+
+### Un function block **non** si implementa in Python
+
+Nelle binding Python 3.40 `IFunctionBlock` è esposto **solo lato consumo**: non
+esiste una factory `FunctionBlock(...)` né un trampoline pybind da cui derivare.
+`FunctionBlockType` esiste ma descrive soltanto il tipo. Un function block vero è
+un **modulo C++** caricato dal ModuleManager; Python resta il client che lo
+istanzia e lo configura. Template di partenza:
+[openDAQ/SimpleFBModule](https://github.com/openDAQ/SimpleFBModule).
+
+Un modulo custom va aggiunto **all'istanza host**, non al dispositivo remoto:
+`device.addFunctionBlock()` offre solo i tipi implementati dal firmware del
+dispositivo, mentre il modulo locale è caricato dal module manager del PC.
+
+### Qual è lo stato «sta registrando»: tre criteri, due sbagliati
+
+Il metodo che ha dato la risposta: fotografare **ogni status e ogni proprietà di
+ogni componente** del dispositivo in tre istanti — prima, durante e dopo una
+registrazione comandata da DewesoftX — e fare il diff.
+
+| | `operation_mode` | `AcquisitionState` | `DSStoringDxd_1.active` |
+|---|---|---|---|
+| prima (non registra) | `SafeOperation` | `Running` | `True` |
+| durante (registra) | **`Operation`** | `Running` | `True` |
+| dopo (fermato) | `SafeOperation` | `Running` | `True` |
+
+**`operation_mode` è l'unico campo che cambia in tutto il dispositivo.** Quindi:
+
+```cpp
+const bool recording = device.getOperationMode() == OperationModeType::Operation;
+```
+
+Gli altri due candidati, entrambi scartati **su misura**:
+
+- **`AcquisitionState`** (enum `AcquisitionStateType {Stopped, Ready, Running}` nel
+  status container del dispositivo) vale `Running` appena il dispositivo acquisisce,
+  cioe' sempre da quando un client si collega. Diventa `Stopped` solo con
+  `operation_mode = Idle`. Non distingue `Operation` da `SafeOperation`.
+- **presenza di un `DSStoring*` attivo**: vedi §5, `active` resta `True` anche a
+  registrazione ferma.
+
+`OperationModeType` è `{Unknown, Idle, Operation, SafeOperation}` ed è definito in
+`opendaq/component.h`; `getOperationMode()` sta su `IComponent`.
+
+### Due trappole di implementazione che costano ore
+
+**1. Scrivere dentro un handler di core event manda in deadlock la connessione.**
+Il core event (`CoreEventId::StatusChanged` = 120, `AttributeChanged` = 100,
+`DeviceOperationModeChanged` = 180) viene consegnato **sul thread del protocollo
+nativo**. Scrivere una proprietà da lì invia una config request sulla stessa
+connessione che sta aspettando il ritorno della callback: il risultato è
+`Native configuration protocol request id N timed out` e il function block che
+finisce in errore. Due rimedi: accodare il lavoro allo scheduler openDAQ
+(`context.getScheduler().scheduleWork(Work([this]{ ... }))`, da
+`opendaq/work_factory.h`) oppure, più semplice, un thread di polling proprio.
+
+**2. I core event non risalgono l'albero.** Misurato: una sottoscrizione su
+`instance.getOnComponentCoreEvent()` non riceve **nulla** per eventi generati da un
+dispositivo figlio; e una sottoscrizione sul dispositivo non riceve l'
+`AttributeChanged` di un suo function block. Bisogna sottoscriversi **sul
+componente che genera l'evento**. Per un blocco che deve reagire a componenti che
+possono ancora non esistere, il polling è più robusto della sottoscrizione.
+
+Altre due, minori ma bloccanti:
+
+- un helper chiamato `toString` in un modulo openDAQ viene catturato per ADL da
+  `ObjectPtr::toString`: 7 errori di compilazione incomprensibili. Dare ai propri
+  helper nomi che non collidano con l'API del SDK.
+- `Property::getMinValue()` / `getMaxValue()` restituiscono `NumberPtr`: va usato
+  `.getFloatValue()`, e va verificato `.assigned()` prima.
+- per scrivere una proprietà dichiarata read-only dall'interno del blocco serve
+  `objPtr.asPtr<IPropertyObjectProtected>().setProtectedPropertyValue(...)`.
+
+### Un blocco che pilota hardware non deve agire con i valori di default
+
+Errore commesso e corretto: il blocco chiamava la propria logica già nel
+costruttore, con i default `SliceNumber = 1`, `ChannelNumber = 1`,
+`ExcitationVoltage = 0`, e quindi **azzerava l'eccitazione di AI1** appena
+istanziato, qualunque cosa ci fosse collegato. Regole adottate:
+
+- un sentinella «non configurato» (`ChannelNumber = 0`, `MinValue = 0`) che
+  inibisce ogni scrittura;
+- una proprietà `Enabled` booleana, **default false**, che arma il blocco;
+- a blocco disarmato l'uscita va in **sicurezza** (eccitazione a 0 V), non lasciata
+  dov'era.
+
+### Compilare un modulo su macOS senza privilegi di amministratore
+
+L'SDK C++ non è nel wheel Python (che contiene solo le dylib di runtime). Dalle
+release ufficiali esiste il `.pkg` macOS arm64, che si può espandere **senza
+installarlo**:
+
+```bash
+pip install cmake                                   # evita Homebrew
+curl -sSLO https://github.com/openDAQ/openDAQ/releases/download/v<ver>/opendaq-<ver>-armv8-macos-apple-clang-21-release.pkg
+pkgutil --expand-full opendaq.pkg expanded
+mkdir prefix && for d in expanded/*/Payload/opt/opendaq; do cp -R "$d/" prefix/; done
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DopenDAQ_DIR=$PWD/prefix/lib/cmake/opendaq
+```
+
+Il `.pkg` è diviso in sub-package per componente: i `Payload/opt/opendaq` vanno
+**uniti** in un unico prefix. Il module manager carica solo i file che finiscono in
+`.module.{dylib,so,dll}`, altrimenti il modulo viene ignorato in silenzio.
+
+### Perché un blocco così deve girare **sul dispositivo**
+
+Un modulo caricato sull'istanza host vive nel processo del client: muore con la
+disconnessione e con la chiusura dell'applicazione, e — soprattutto — **non può
+coesistere con DewesoftX**, che prende l'`ExclusiveControl` (§3) mentre il blocco
+ha bisogno di `Control` per scrivere.
+
+Il codice va quindi scritto perché funzioni in entrambe le collocazioni: se si
+cerca il dispositivo risalendo i parent fino alla radice, **sul dispositivo la
+radice è già il dispositivo**, sull'host è l'istanza e il dispositivo è un
+figlio. Un'unica implementazione, nessuna logica di discovery dentro il blocco.
+
+Per il deploy a bordo restano tre ostacoli, da chiarire con l'R&D:
+
+1. il dispositivo gira openDAQ **3.20.1.34** mentre il PC monta 3.40.x: il modulo
+   va compilato contro la versione del dispositivo, non c'è compatibilità ABI fra
+   minor openDAQ;
+2. `platform` e `systemType` del dispositivo sono **stringhe vuote**: l'architettura
+   non è esposta via openDAQ (dai path interni, Linux);
+3. il dispositivo si aggiorna via update package Dewesoft
+   (`UpdatePackageName = IOLITE-X`); **non risulta una via pubblica** per caricare un
+   modulo openDAQ custom.
+
+### Portabilita' su altri modelli
+
+Il blocco assume tre cose, tutte verificate **solo su IOLITE X**: che la
+registrazione si legga da `operation_mode`; che i canali stiano in
+`IO/<slice>/AI<n>`; che ogni canale abbia un function block `Amplifier` con la
+proprietà `Excitation`. Su OBSIDIAN, SIRIUS X o KRYPTON vanno **verificate**, non
+assunte: enumerare l'albero `IO`, i function block annidati nel canale e le
+proprietà dell'amplificatore, e confermare che `operation_mode` segua la
+registrazione avviandola e fermandola davvero.
+
+---
+
 ## Fonti
 
 **Documentazione pubblica**: [openDAQ docs](https://docs.opendaq.com/manual/opendaq/3.30/howto_guides/howto_connect_to_device.html) ·
@@ -711,3 +938,12 @@ pattern passerella, `ClientType` ViewOnly, regola del dominio e diagnosi delle
 derive di timestamp. Repo `~/Developer/DEWESOFT/opendaq-bbb-bookworm`
 (`opendaq-device/banda_obsidian.py`, `dstrack/plc/gateway_opcua.py`,
 `dstrack/sources/opendaq_raw.py`, `dstrack/transport/plc_stato.py`).
+
+Sessione del **03/11/2026** su IOLITE-X S/N DB24032498 (fw 2026.2.5.0, SDK a bordo
+3.20.1.34): function block custom `ExcitationOnRecord` in C++, criterio
+`operation_mode` per lo stato di registrazione, limiti dei `DSStoring*`,
+`ExclusiveControl` di DewesoftX, deadlock dei core event, build del modulo su
+macOS arm64 senza privilegi. Sorgenti, GUI di test e log in
+`~/Downloads/excitation_on_record` sulla macchina di Alberto Boffi
+(`src/excitation_fb.cpp`, `gui_excitation_fb.py`, `snapshot_storing.py`,
+`test_fb.py`, `README.md`).

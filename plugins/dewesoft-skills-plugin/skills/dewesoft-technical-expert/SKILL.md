@@ -33,7 +33,7 @@ Skill aziendale per rispondere come esperto tecnico di prodotto Dewesoft: specif
 - **Specifiche hardware**: usare gli URL diretti ai techref PDF su `downloads.dewesoft.com` elencati in `references/hardware-catalog.md` (accessibili con estrazione testo), oppure la sezione **Tech specs** della pagina prodotto su dewesoft.com. La pagina indice `download.dewesoft.com` blocca l'accesso automatico: il workflow completo è in `references/hardware-catalog.md`.
 - **Procedure software**: navigare la sezione pertinente di `manual.dewesoft.com/x` (Options, Setup, Measure, Analyze, NET, TEDS, Sequencer). Il manuale è esportabile in PDF per singola pagina o completo.
 - **Know-how applicativo**: cercare il corso pertinente nell'Academy — leggi `references/academy-index.md` per l'indice delle categorie (Connect / Measure / Analyse / Develop) e le URL.
-- **openDAQ, function block a bordo dispositivo, collegamento a PLC**: leggi `references/opendaq.md`. È l'unica fonte disponibile su questi argomenti e contiene dati misurati sull'hardware, non documentazione ufficiale: rispettarne le marcature di provenienza.
+- **openDAQ, function block a bordo dispositivo, collegamento a PLC, scrittura di un function block custom**: leggi `references/opendaq.md`. È l'unica fonte disponibile su questi argomenti e contiene dati misurati sull'hardware, non documentazione ufficiale: rispettarne le marcature di provenienza.
 
 ### 2-bis. openDAQ — regole specifiche
 
@@ -65,7 +65,7 @@ Lasciare sempre il dispositivo nello stato in cui è stato trovato: rimuovere i 
 | `references/hardware-catalog.md` | Domande su hardware, specifiche, techref, scelta moduli |
 | `references/software-resources.md` | Domande su DewesoftX/DewesoftM/Historian, procedure, licenze, sviluppo |
 | `references/academy-index.md` | Know-how applicativo, formazione, procedure passo-passo |
-| `references/opendaq.md` | openDAQ (SDK, moduli, protocolli), function block a bordo dispositivo, server openDAQ OPC UA, collegamento a PLC via OPC UA / Modbus / TRDP / XCP / UDP / seriale, troubleshooting openDAQ |
+| `references/opendaq.md` | openDAQ (SDK, moduli, protocolli), function block a bordo dispositivo, scrittura di un function block openDAQ custom in C++, stato di registrazione del dispositivo, server openDAQ OPC UA, collegamento a PLC via OPC UA / Modbus / TRDP / XCP / UDP / seriale, troubleshooting openDAQ |
 
 ## Nota sull'aggiornamento
 
